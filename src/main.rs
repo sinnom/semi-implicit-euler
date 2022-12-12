@@ -1,13 +1,15 @@
 //! A simple 3D scene with light shining over a cube sitting on a plane.
 
+use std::f32::consts::PI;
+
 use bevy::prelude::*;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup)
-        .add_system(update_position)
-        .add_system(velocity_from_siet.after(update_position))
+        .add_system(position_from_velocity)
+        .add_system(velocity_from_siet.after(position_from_velocity))
         .run();
 }
 
@@ -17,6 +19,7 @@ struct Velocity(Vec3);
 #[derive(Component)]
 struct SemiImplicitEulerTracking {
     target: Entity,
+    prev_target_pos: Vec3,
     frequency: f32,
     damping: f32,
     response: f32,
@@ -24,20 +27,50 @@ struct SemiImplicitEulerTracking {
 
 type Siet = SemiImplicitEulerTracking;
 
-fn update_position(mut query: Query<(&mut Transform, &Velocity)>) {
+fn position_from_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
     for (mut transform, velocity) in &mut query {
-        transform.translation += **velocity;
+        transform.translation += **velocity * time.delta_seconds();
     }
 }
 
-fn velocity_from_siet(mut query: Query<(&mut Velocity, &Transform, &Siet)>) {
-    for (velocity, transform, siet) in &query {
-        let Ok(pos_in) = query.get_component::<Transform>(siet.target) else {
-          panic!("SemiImplicitEulerTracking component has a target, but the target does not a Transform.");
+fn velocity_from_siet(
+    time: Res<Time>,
+    mut siets: Query<(&mut Siet, Entity), (With<Velocity>, With<Transform>)>,
+    mut velocities: Query<&mut Velocity>,
+    transforms: Query<&Transform>,
+) {
+    for (mut siet, siet_entity) in &mut siets {
+        // y, y'
+        let current_pos = transforms.get(siet_entity).unwrap().translation;
+        let current_vel = **velocities.get(siet_entity).unwrap();
+
+        // x, x'
+        let target_pos = transforms.get(siet.target).unwrap().translation;
+        let target_vel = {
+            // Get velocity from a component if its there
+            if let Ok(vel_component) = velocities.get(siet.target) {
+                vel_component.0
+            }
+            // Or calculate the velocity from previous position on previous frames
+            else {
+                let target_pos = &transforms.get(siet_entity).unwrap().translation;
+                let vel_calculated = (*target_pos - siet.prev_target_pos) / time.delta_seconds();
+                siet.prev_target_pos = *target_pos;
+                vel_calculated
+            }
         };
-        let Ok(vel_in)  = query.get_component::<Velocity>(siet.target) else {
-          panic!("Siet component has a target, but the target lacks a Velocity.");
-        };
+
+        // Compute constants
+        let k1 = siet.damping / (PI * siet.frequency);
+        let k2 = 1.0 / ((2.0 * PI * siet.frequency) * (2.0 * PI * siet.frequency));
+        let k3 = siet.response * siet.damping / (2.0 * PI * siet.frequency);
+
+        // Calculate the new velocity
+        let accel = (target_pos + (k3 * target_vel) - current_pos - (k1 * current_vel)) / k2;
+        let new_vel = current_vel + time.delta_seconds() * accel;
+
+        let mut velocity = velocities.get_mut(siet_entity).unwrap();
+        *velocity = Velocity(new_vel);
     }
 }
 
@@ -61,7 +94,7 @@ fn setup(
             transform: Transform::from_xyz(0.0, 0.5, 0.0),
             ..default()
         })
-        .insert(Velocity(Vec3::new(0.0, 0.0, 0.2)));
+        .insert(Velocity(Vec3::new(0.0, 0.0, 0.1)));
     // light
     commands.spawn(PointLightBundle {
         point_light: PointLight {
