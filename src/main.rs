@@ -25,6 +25,18 @@ struct SemiImplicitEulerTracking {
     response: f32,
 }
 
+impl SemiImplicitEulerTracking {
+    fn from_target(target: Entity) -> Self {
+        Self {
+            target,
+            prev_target_pos: Vec3::ZERO,
+            frequency: 1.0,
+            damping: 0.5,
+            response: 2.0,
+        }
+    }
+}
+
 type Siet = SemiImplicitEulerTracking;
 
 fn position_from_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
@@ -86,15 +98,30 @@ fn setup(
         material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
         ..default()
     });
-    // cube
-    commands
+
+    let target = commands
         .spawn(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+            mesh: meshes.add(Mesh::from(shape::Icosphere {
+                radius: 0.7,
+                subdivisions: 2,
+            })),
             material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             transform: Transform::from_xyz(0.0, 0.5, 0.0),
             ..default()
         })
-        .insert(Velocity(Vec3::new(0.0, 0.0, 0.1)));
+        .insert(Velocity(Vec3::new(0.0, 10.0, 0.0)))
+        .id();
+
+    // SIETracking cube
+    commands
+        .spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+            material: materials.add(Color::rgb(0.8, 0.2, 0.6).into()),
+            transform: Transform::from_xyz(0.0, 0.5, 0.0),
+            ..default()
+        })
+        .insert(Velocity(Vec3::new(0.0, 0.0, 0.0)))
+        .insert(Siet::from_target(target));
     // light
     commands.spawn(PointLightBundle {
         point_light: PointLight {
