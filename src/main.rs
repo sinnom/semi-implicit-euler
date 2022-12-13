@@ -1,15 +1,18 @@
 //! A simple 3D scene with light shining over a cube sitting on a plane.
 
-use std::f32::consts::PI;
+use std::{f32::consts::PI, time::Duration};
 
 use bevy::prelude::*;
+use bevy_turborand::{rng::Rng, DelegatedRng, GlobalRng, RngComponent, RngPlugin};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugin(RngPlugin::default())
         .add_startup_system(setup)
         .add_system(position_from_velocity)
         .add_system(velocity_from_siet.after(position_from_velocity))
+        .add_system(random_pos)
         .run();
 }
 
@@ -52,6 +55,7 @@ fn velocity_from_siet(
     transforms: Query<&Transform>,
 ) {
     for (mut siet, siet_entity) in &mut siets {
+        let delta_time = time.delta_seconds();
         // y, y'
         let current_pos = transforms.get(siet_entity).unwrap().translation;
         let current_vel = **velocities.get(siet_entity).unwrap();
@@ -65,9 +69,8 @@ fn velocity_from_siet(
             }
             // Or calculate the velocity from previous position on previous frames
             else {
-                let target_pos = &transforms.get(siet_entity).unwrap().translation;
-                let vel_calculated = (*target_pos - siet.prev_target_pos) / time.delta_seconds();
-                siet.prev_target_pos = *target_pos;
+                let vel_calculated = (target_pos - siet.prev_target_pos) / delta_time;
+                siet.prev_target_pos = target_pos;
                 vel_calculated
             }
         };
@@ -77,12 +80,33 @@ fn velocity_from_siet(
         let k2 = 1.0 / ((2.0 * PI * siet.frequency) * (2.0 * PI * siet.frequency));
         let k3 = siet.response * siet.damping / (2.0 * PI * siet.frequency);
 
+        let k2_stable = k2.max(1.1 * ((delta_time * delta_time / 4.0) + (delta_time * k1 / 2.0)));
+
         // Calculate the new velocity
-        let accel = (target_pos + (k3 * target_vel) - current_pos - (k1 * current_vel)) / k2;
+        let accel = (target_pos + (k3 * target_vel) - current_pos - (k1 * current_vel)) / k2_stable;
         let new_vel = current_vel + time.delta_seconds() * accel;
 
         let mut velocity = velocities.get_mut(siet_entity).unwrap();
         *velocity = Velocity(new_vel);
+    }
+}
+
+#[derive(Component)]
+struct RandomTeleport {
+    timer: Timer,
+}
+fn random_pos(
+    time: Res<Time>,
+    mut query: Query<(&mut Transform, &mut RngComponent, &mut RandomTeleport)>,
+) {
+    const RANDOM_SCALE: f32 = 3.0;
+    for (mut transform, mut rng, mut rand_teleport) in &mut query {
+        rand_teleport.timer.tick(time.delta());
+
+        if rand_teleport.timer.just_finished() {
+            transform.translation =
+                Vec3::new(rng.f32() * RANDOM_SCALE, 0.0, rng.f32() * RANDOM_SCALE)
+        }
     }
 }
 
@@ -91,6 +115,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut global_rng: ResMut<GlobalRng>,
 ) {
     // plane
     commands.spawn(PbrBundle {
@@ -109,7 +134,11 @@ fn setup(
             transform: Transform::from_xyz(0.0, 0.5, 0.0),
             ..default()
         })
-        .insert(Velocity(Vec3::new(0.0, 10.0, 0.0)))
+        .insert(Velocity(Vec3::new(0.0, 1.0, 0.0)))
+        .insert(RandomTeleport {
+            timer: Timer::new(Duration::from_secs(1), TimerMode::Repeating),
+        })
+        .insert(RngComponent::from(&mut global_rng))
         .id();
 
     // SIETracking cube

@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.9" }
+bevy_turborand = "0.4.2"
 
 # When building release, run `cargo build --release --no-default-features`
 [features]
