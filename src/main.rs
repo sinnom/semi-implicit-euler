@@ -2,13 +2,29 @@
 
 use std::{f32::consts::PI, time::Duration};
 
-use bevy::prelude::*;
+use bevy::{log::LogPlugin, prelude::*};
 use bevy_turborand::{rng::Rng, DelegatedRng, GlobalRng, RngComponent, RngPlugin};
 
+const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
+
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(RngPlugin::default())
+    let mut app = App::new();
+
+    // this code is compiled only if debug assertions are enabled (debug mode)
+    #[cfg(debug_assertions)]
+    app.add_plugins(DefaultPlugins.set(LogPlugin {
+        level: bevy::log::Level::DEBUG,
+        filter: format!("debug,wgpu_core=warn,wgpu_hal=warn,{CRATE_NAME}=debug"),
+    }));
+
+    // this code is compiled only if debug assertions are disabled (release mode)
+    #[cfg(not(debug_assertions))]
+    app.add_plugins(DefaultPlugins.set(LogPlugin {
+        level: bevy::log::Level::INFO,
+        filter: "info,wgpu_core=warn,wgpu_hal=warn".into(),
+    }));
+
+    app.add_plugin(RngPlugin::default())
         .add_startup_system(setup)
         .add_system(position_from_velocity)
         .add_system(velocity_from_siet.after(position_from_velocity))
@@ -44,6 +60,9 @@ type Siet = SemiImplicitEulerTracking;
 
 fn position_from_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
     for (mut transform, velocity) in &mut query {
+        if velocity.is_nan() {
+            panic!("velocity is Not A Number");
+        }
         transform.translation += **velocity * time.delta_seconds();
     }
 }
@@ -56,6 +75,7 @@ fn velocity_from_siet(
 ) {
     for (mut siet, siet_entity) in &mut siets {
         let delta_time = time.delta_seconds();
+
         // y, y'
         let current_pos = transforms.get(siet_entity).unwrap().translation;
         let current_vel = **velocities.get(siet_entity).unwrap();
@@ -68,7 +88,10 @@ fn velocity_from_siet(
                 vel_component.0
             }
             // Or calculate the velocity from previous position on previous frames
-            else {
+            // (preventing division by zero)
+            else if delta_time == 0.0 {
+                Vec3::ZERO
+            } else {
                 let vel_calculated = (target_pos - siet.prev_target_pos) / delta_time;
                 siet.prev_target_pos = target_pos;
                 vel_calculated
@@ -78,13 +101,13 @@ fn velocity_from_siet(
         // Compute constants
         let k1 = siet.damping / (PI * siet.frequency);
         let k2 = 1.0 / ((2.0 * PI * siet.frequency) * (2.0 * PI * siet.frequency));
-        let k3 = siet.response * siet.damping / (2.0 * PI * siet.frequency);
+        let k3 = (siet.response * siet.damping) / (2.0 * PI * siet.frequency);
 
         let k2_stable = k2.max(1.1 * ((delta_time * delta_time / 4.0) + (delta_time * k1 / 2.0)));
 
         // Calculate the new velocity
         let accel = (target_pos + (k3 * target_vel) - current_pos - (k1 * current_vel)) / k2_stable;
-        let new_vel = current_vel + time.delta_seconds() * accel;
+        let new_vel = current_vel + (delta_time * accel);
 
         let mut velocity = velocities.get_mut(siet_entity).unwrap();
         *velocity = Velocity(new_vel);
@@ -127,14 +150,14 @@ fn setup(
     let target = commands
         .spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Icosphere {
-                radius: 0.7,
+                radius: 0.2,
                 subdivisions: 2,
             })),
             material: materials.add(Color::rgb(0.8, 0.7, 0.6).into()),
             transform: Transform::from_xyz(0.0, 0.5, 0.0),
             ..default()
         })
-        .insert(Velocity(Vec3::new(0.0, 1.0, 0.0)))
+        // .insert(Velocity(Vec3::new(0.0, 1.0, 0.0)))
         .insert(RandomTeleport {
             timer: Timer::new(Duration::from_secs(1), TimerMode::Repeating),
         })
@@ -163,7 +186,7 @@ fn setup(
     });
     // camera
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(-10.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
 }
