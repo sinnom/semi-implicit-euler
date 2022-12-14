@@ -36,7 +36,7 @@ fn main() {
 struct Velocity(Vec3);
 
 #[derive(Component)]
-struct SemiImplicitEulerTracking {
+struct SemiImplicitEulerConstraint {
     target: Entity,
     prev_target_pos: Vec3,
     frequency: f32,
@@ -44,7 +44,7 @@ struct SemiImplicitEulerTracking {
     response: f32,
 }
 
-impl SemiImplicitEulerTracking {
+impl SemiImplicitEulerConstraint {
     fn from_target(target: Entity) -> Self {
         Self {
             target,
@@ -56,7 +56,7 @@ impl SemiImplicitEulerTracking {
     }
 }
 
-type Siet = SemiImplicitEulerTracking;
+type SieConstraint = SemiImplicitEulerConstraint;
 
 fn position_from_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
     for (mut transform, velocity) in &mut query {
@@ -69,7 +69,7 @@ fn position_from_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Ve
 
 fn velocity_from_siet(
     time: Res<Time>,
-    mut siets: Query<(&mut Siet, Entity), (With<Velocity>, With<Transform>)>,
+    mut siets: Query<(&mut SieConstraint, Entity), (With<Velocity>, With<Transform>)>,
     mut velocities: Query<&mut Velocity>,
     transforms: Query<&Transform>,
 ) {
@@ -173,7 +173,7 @@ fn setup(
             ..default()
         })
         .insert(Velocity(Vec3::new(0.0, 0.0, 0.0)))
-        .insert(Siet::from_target(target));
+        .insert(SieConstraint::from_target(target));
     // light
     commands.spawn(PointLightBundle {
         point_light: PointLight {
