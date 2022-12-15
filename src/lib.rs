@@ -46,10 +46,8 @@ pub fn update_sie_constraints(
         // y, y'
         let (current_pos, current_vel) = (siet.current_pos, siet.current_vel);
 
-        // UPDATE POSITION
+        // Calculate new position
         siet.current_pos += current_vel * delta_time;
-
-        // UPDATE VELOCITY
 
         // x, x'
         let target_pos = transforms.get(siet.target).unwrap().translation;
@@ -70,7 +68,7 @@ pub fn update_sie_constraints(
 
         let k2_stable = k2.max(1.1 * ((delta_time * delta_time / 4.0) + (delta_time * k1 / 2.0)));
 
-        // Calculate the new velocity
+        // Calculate new velocity
         let accel = (target_pos + (k3 * target_vel) - current_pos - (k1 * current_vel)) / k2_stable;
         siet.current_vel = current_vel + (delta_time * accel);
     }
