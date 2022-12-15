@@ -1,9 +1,10 @@
 //! A simple 3D scene with light shining over a cube sitting on a plane.
 
-use std::{f32::consts::PI, time::Duration};
+use std::time::Duration;
 
 use bevy::{log::LogPlugin, prelude::*};
-use bevy_turborand::{rng::Rng, DelegatedRng, GlobalRng, RngComponent, RngPlugin};
+use bevy_turborand::{DelegatedRng, GlobalRng, RngComponent, RngPlugin};
+use semi_implicit_euler::{pos_from_sie_constraints, update_sie_constraints, SieConstraint};
 
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -26,92 +27,10 @@ fn main() {
 
     app.add_plugin(RngPlugin::default())
         .add_startup_system(setup)
-        .add_system(position_from_velocity)
-        .add_system(velocity_from_siet.after(position_from_velocity))
+        .add_system(update_sie_constraints)
+        .add_system(pos_from_sie_constraints.after(update_sie_constraints))
         .add_system(random_pos)
         .run();
-}
-
-#[derive(Component, Deref, DerefMut)]
-struct Velocity(Vec3);
-
-#[derive(Component)]
-struct SemiImplicitEulerConstraint {
-    target: Entity,
-    prev_target_pos: Vec3,
-    frequency: f32,
-    damping: f32,
-    response: f32,
-}
-
-impl SemiImplicitEulerConstraint {
-    fn from_target(target: Entity) -> Self {
-        Self {
-            target,
-            prev_target_pos: Vec3::ZERO,
-            frequency: 1.0,
-            damping: 0.5,
-            response: 2.0,
-        }
-    }
-}
-
-type SieConstraint = SemiImplicitEulerConstraint;
-
-fn position_from_velocity(time: Res<Time>, mut query: Query<(&mut Transform, &Velocity)>) {
-    for (mut transform, velocity) in &mut query {
-        if velocity.is_nan() {
-            panic!("velocity is Not A Number");
-        }
-        transform.translation += **velocity * time.delta_seconds();
-    }
-}
-
-fn velocity_from_siet(
-    time: Res<Time>,
-    mut siets: Query<(&mut SieConstraint, Entity), (With<Velocity>, With<Transform>)>,
-    mut velocities: Query<&mut Velocity>,
-    transforms: Query<&Transform>,
-) {
-    for (mut siet, siet_entity) in &mut siets {
-        let delta_time = time.delta_seconds();
-
-        // y, y'
-        let current_pos = transforms.get(siet_entity).unwrap().translation;
-        let current_vel = **velocities.get(siet_entity).unwrap();
-
-        // x, x'
-        let target_pos = transforms.get(siet.target).unwrap().translation;
-        let target_vel = {
-            // Get velocity from a component if its there
-            if let Ok(vel_component) = velocities.get(siet.target) {
-                vel_component.0
-            }
-            // Or calculate the velocity from previous position on previous frames
-            // (preventing division by zero)
-            else if delta_time == 0.0 {
-                Vec3::ZERO
-            } else {
-                let vel_calculated = (target_pos - siet.prev_target_pos) / delta_time;
-                siet.prev_target_pos = target_pos;
-                vel_calculated
-            }
-        };
-
-        // Compute constants
-        let k1 = siet.damping / (PI * siet.frequency);
-        let k2 = 1.0 / ((2.0 * PI * siet.frequency) * (2.0 * PI * siet.frequency));
-        let k3 = (siet.response * siet.damping) / (2.0 * PI * siet.frequency);
-
-        let k2_stable = k2.max(1.1 * ((delta_time * delta_time / 4.0) + (delta_time * k1 / 2.0)));
-
-        // Calculate the new velocity
-        let accel = (target_pos + (k3 * target_vel) - current_pos - (k1 * current_vel)) / k2_stable;
-        let new_vel = current_vel + (delta_time * accel);
-
-        let mut velocity = velocities.get_mut(siet_entity).unwrap();
-        *velocity = Velocity(new_vel);
-    }
 }
 
 #[derive(Component)]
@@ -157,7 +76,6 @@ fn setup(
             transform: Transform::from_xyz(0.0, 0.5, 0.0),
             ..default()
         })
-        // .insert(Velocity(Vec3::new(0.0, 1.0, 0.0)))
         .insert(RandomTeleport {
             timer: Timer::new(Duration::from_secs(1), TimerMode::Repeating),
         })
@@ -172,7 +90,6 @@ fn setup(
             transform: Transform::from_xyz(0.0, 0.5, 0.0),
             ..default()
         })
-        .insert(Velocity(Vec3::new(0.0, 0.0, 0.0)))
         .insert(SieConstraint::from_target(target));
     // light
     commands.spawn(PointLightBundle {
