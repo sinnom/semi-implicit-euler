@@ -1,6 +1,40 @@
 use std::f32::consts::PI;
 
-use bevy::prelude::*;
+use bevy::{ecs::schedule::ShouldRun, prelude::*};
+
+#[derive(Default)]
+pub struct SemiImplicitEulerPlugin;
+
+impl Plugin for SemiImplicitEulerPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<SiePluginState>().add_system_set(
+            SystemSet::new()
+                .with_system(update_sie_constraints)
+                .with_system(
+                    pos_from_sie_constraints
+                        .with_run_criteria(|state: Res<SiePluginState>| {
+                            if state.update_pos {
+                                ShouldRun::Yes
+                            } else {
+                                ShouldRun::No
+                            }
+                        })
+                        .after(update_sie_constraints),
+                ),
+        );
+    }
+}
+
+#[derive(Resource)]
+pub struct SiePluginState {
+    pub update_pos: bool,
+}
+
+impl Default for SiePluginState {
+    fn default() -> Self {
+        Self { update_pos: true }
+    }
+}
 
 #[derive(Component)]
 pub struct SemiImplicitEulerConstraint {

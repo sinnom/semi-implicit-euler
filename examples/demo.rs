@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use bevy::{log::LogPlugin, prelude::*};
 use bevy_turborand::{DelegatedRng, GlobalRng, RngComponent, RngPlugin};
-use semi_implicit_euler::{pos_from_sie_constraints, update_sie_constraints, SieConstraint};
+use semi_implicit_euler::{SemiImplicitEulerPlugin, SieConstraint};
 
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -26,9 +26,10 @@ fn main() {
     }));
 
     app.add_plugin(RngPlugin::default())
+        .add_plugin(SemiImplicitEulerPlugin)
         .add_startup_system(setup)
-        .add_system(update_sie_constraints)
-        .add_system(pos_from_sie_constraints.after(update_sie_constraints))
+        // TODO: Add a system set label and order this to come before
+        // or after the constraint calculations
         .add_system(random_pos)
         .run();
 }
