@@ -47,8 +47,11 @@ fn random_pos(
         rand_teleport.timer.tick(time.delta());
 
         if rand_teleport.timer.just_finished() {
-            transform.translation =
-                Vec3::new(rng.f32() * RANDOM_SCALE, 0.0, rng.f32() * RANDOM_SCALE)
+            transform.translation = Vec3::new(
+                (rng.f32() * 2.0 - 1.0) * RANDOM_SCALE,
+                0.0,
+                (rng.f32() * 2.0 - 1.0) * RANDOM_SCALE,
+            )
         }
     }
 }
@@ -64,6 +67,7 @@ fn setup(
     commands.spawn(PbrBundle {
         mesh: meshes.add(Mesh::from(shape::Plane { size: 5.0 })),
         material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+        transform: Transform::from_xyz(0.0, -0.5, 0.0),
         ..default()
     });
 
